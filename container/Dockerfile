@@ -28,9 +28,11 @@ RUN apt-get update && apt-get install -y \
 # Set Chromium path for agent-browser
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+# Allow globally installed packages (node-ical, etc.) to be required from any directory
+ENV NODE_PATH=/usr/local/lib/node_modules
 
 # Install agent-browser and claude-code globally
-RUN npm install -g agent-browser @anthropic-ai/claude-code
+RUN npm install -g agent-browser @anthropic-ai/claude-code node-ical
 
 # Create app directory
 WORKDIR /app

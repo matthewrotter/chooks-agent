@@ -72,6 +72,7 @@ Key paths inside the container:
 - `/workspace/project/store/messages.db` - SQLite database
 - `/workspace/project/store/messages.db` (registered_groups table) - Group config
 - `/workspace/project/groups/` - All group folders
+- `/workspace/project/data/ical-calendars.json` - Google Calendar iCal subscriptions
 
 ---
 
@@ -211,3 +212,96 @@ When scheduling tasks for other groups, use the `target_group_jid` parameter wit
 - `schedule_task(prompt: "...", schedule_type: "cron", schedule_value: "0 9 * * 1", target_group_jid: "120363336345536173@g.us")`
 
 The task will run in that group's context with access to their files and memory.
+
+---
+
+## Google Calendar (iCal)
+
+You can read events from Google Calendar via private iCal URLs. No API keys needed — the URLs themselves provide access.
+
+### Configuration
+
+Calendar subscriptions are stored in `/workspace/project/data/ical-calendars.json`:
+
+```json
+[
+  { "name": "Personal", "url": "https://calendar.google.com/calendar/ical/.../basic.ics" }
+]
+```
+
+To list configured calendars, read this file.
+
+### Fetching and Parsing Events
+
+Use `node-ical` (globally installed) to fetch and parse. Example — get today's events from a calendar:
+
+```bash
+node -e "
+const ical = require('node-ical');
+
+async function main() {
+  const url = process.argv[1];
+  const raw = await ical.async.fromURL(url);
+
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  const events = [];
+  for (const event of Object.values(raw)) {
+    if (event.type !== 'VEVENT') continue;
+
+    if (event.rrule) {
+      const instances = event.rrule.between(startOfDay, endOfDay, true);
+      for (const date of instances) {
+        const dateKey = date.toISOString().split('T')[0];
+        if (event.exdate && Object.keys(event.exdate).some(d => d.startsWith(dateKey))) continue;
+        const duration = event.end ? event.end.getTime() - event.start.getTime() : 3600000;
+        events.push({
+          summary: event.summary,
+          start: date,
+          end: new Date(date.getTime() + duration),
+          location: event.location || '',
+          allDay: event.datetype === 'date'
+        });
+      }
+    } else if (event.start && event.end) {
+      if (event.start < endOfDay && event.end > startOfDay) {
+        events.push({
+          summary: event.summary,
+          start: event.start,
+          end: event.end,
+          location: event.location || '',
+          allDay: event.datetype === 'date'
+        });
+      }
+    }
+  }
+
+  events.sort((a, b) => new Date(a.start) - new Date(b.start));
+  console.log(JSON.stringify(events, null, 2));
+}
+
+main().catch(e => { console.error(e.message); process.exit(1); });
+" "ICAL_URL_HERE"
+```
+
+### Fetching All Calendars
+
+To fetch events from all configured calendars:
+
+```bash
+node -e "
+const ical = require('node-ical');
+const fs = require('fs');
+const calendars = JSON.parse(fs.readFileSync('/workspace/project/data/ical-calendars.json', 'utf8'));
+// fetch each calendar URL with ical.async.fromURL(cal.url), aggregate and sort events
+"
+```
+
+### Tips
+
+- All-day events have `datetype === 'date'` and `start.dateOnly === true`
+- Recurring events need `event.rrule.between(start, end, true)` to expand instances
+- The `.ics` URL is the secret — treat it as sensitive, never share it in messages
+- Events are in the calendar's timezone; `event.start.tz` has the IANA timezone

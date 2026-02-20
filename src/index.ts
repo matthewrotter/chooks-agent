@@ -4,6 +4,7 @@ import path from 'path';
 
 import {
   ASSISTANT_NAME,
+  CONTAINER_TIMEOUT,
   DATA_DIR,
   IDLE_TIMEOUT,
   MAIN_GROUP_FOLDER,
@@ -463,6 +464,57 @@ export function ensureContainerSystemRunning(): void {
   }
 }
 
+/**
+ * Periodically stop nanoclaw containers that have outlived their timeout.
+ * Catches cases where the normal timeout/kill flow fails silently.
+ */
+function startContainerGC(): ReturnType<typeof setInterval> {
+  const GC_INTERVAL = 5 * 60_000; // check every 5 minutes
+  const MAX_AGE = CONTAINER_TIMEOUT + IDLE_TIMEOUT + 60_000; // generous grace
+
+  return setInterval(() => {
+    try {
+      const output = execSync('container ls --format json', {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        encoding: 'utf-8',
+        timeout: 10000,
+      });
+      const containers: { status: string; configuration: { id: string } }[] =
+        JSON.parse(output || '[]');
+      const now = Date.now();
+
+      for (const c of containers) {
+        const name = c.configuration.id;
+        if (c.status !== 'running' || !name.startsWith('nanoclaw-')) continue;
+
+        // Extract epoch from container name: nanoclaw-{folder}-{epoch}
+        const match = name.match(/-(\d{13,})$/);
+        if (!match) continue;
+
+        const age = now - parseInt(match[1], 10);
+        if (age > MAX_AGE) {
+          logger.warn({ containerName: name, ageMinutes: Math.round(age / 60_000) }, 'GC: stopping stale container');
+          try {
+            execSync(`container stop ${name}`, { stdio: 'pipe', timeout: 15000 });
+          } catch { /* already stopped */ }
+        }
+      }
+    } catch { /* non-fatal */ }
+  }, GC_INTERVAL);
+}
+
+/**
+ * Write a heartbeat file every 60s so an external watchdog can detect hangs.
+ */
+function startHeartbeat(): ReturnType<typeof setInterval> {
+  const heartbeatPath = path.join(DATA_DIR, 'heartbeat');
+  const write = () => {
+    try { fs.writeFileSync(heartbeatPath, Date.now().toString()); } catch { /* non-fatal */ }
+  };
+  write();
+  return setInterval(write, 60_000);
+}
+
 async function main(): Promise<void> {
   ensureContainerSystemRunning();
   initDatabase();
@@ -529,6 +581,8 @@ async function main(): Promise<void> {
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
   startMessageLoop();
+  startContainerGC();
+  startHeartbeat();
 }
 
 // Guard: only run when executed directly, not when imported by tests

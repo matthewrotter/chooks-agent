@@ -1,0 +1,14 @@
+skill: gcal-ical
+version: 1.0.0
+description: "Google Calendar integration via private iCal URLs (read-only). Stores named .ics URLs for agent to fetch with node-ical."
+core_version: 0.1.0
+
+adds: []
+modifies: []
+
+structured:
+  npm_dependencies: {}
+  env_additions: []
+
+conflicts: []
+depends: []

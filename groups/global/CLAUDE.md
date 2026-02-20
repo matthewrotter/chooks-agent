@@ -56,3 +56,9 @@ NEVER use markdown. Only use WhatsApp/Telegram formatting:
 - ```triple backticks``` for code
 
 No ## headings. No [links](url). No **double stars**.
+
+---
+
+## Google Calendar (iCal)
+
+Calendar subscriptions are configured. The main channel can read and summarize calendar events using `node-ical`. Ask the main channel if you need calendar information.
