@@ -28,7 +28,7 @@ import {
   initDatabase,
   setSession,
 } from './db.js';
-import { ensureContainerSystemRunning } from './index.js';
+import { ensureDockerRunning } from './index.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
 
@@ -63,7 +63,7 @@ async function main(): Promise<void> {
   const { groupFolder } = parseArgs();
 
   // Initialize
-  ensureContainerSystemRunning();
+  ensureDockerRunning();
   initDatabase();
 
   const sessions = getAllSessions();
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
       // Also stop the container directly
       if (activeContainerName) {
         try {
-          execSync(`container stop ${activeContainerName}`, {
+          execSync(`docker stop ${activeContainerName}`, {
             stdio: 'pipe',
             timeout: 5000,
           });

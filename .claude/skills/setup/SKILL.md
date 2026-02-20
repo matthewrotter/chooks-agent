@@ -43,40 +43,30 @@ Only ask the user for help if multiple retries fail with the same error.
 
 ### 3a. Choose runtime
 
-Use the environment check results from step 1 to decide which runtime to use:
+NanoClaw uses Docker as its container runtime. Check if Docker is available:
 
-- PLATFORM=linux → Docker
-- PLATFORM=macos + APPLE_CONTAINER=installed → apple-container
-- PLATFORM=macos + DOCKER=running + APPLE_CONTAINER=not_found → Docker
-- PLATFORM=macos + DOCKER=installed_not_running → start Docker: `open -a Docker`. Wait 15s, re-check with `docker info`. If still not running, tell the user Docker is starting up and poll a few more times.
-- Neither available → AskUserQuestion: Apple Container (recommended for macOS) vs Docker?
-  - Apple Container: tell user to download from https://github.com/apple/container/releases and install the .pkg. Wait for confirmation, then verify with `container --version`.
-  - Docker on macOS: install via `brew install --cask docker`, then `open -a Docker` and wait for it to start. If brew not available, direct to Docker Desktop download.
-  - Docker on Linux: install with `curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker $USER`. Note: user may need to log out/in for group membership.
+- DOCKER=running → continue to 3b
+- DOCKER=installed_not_running → start Docker: `open -a Docker` (macOS). Wait 15s, re-check with `docker info`. If still not running, tell the user Docker is starting up and poll a few more times.
+- Neither available → Install Docker:
+  - macOS: install via `brew install --cask docker`, then `open -a Docker` and wait for it to start. If brew not available, direct to Docker Desktop download.
+  - Linux: install with `curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker $USER`. Note: user may need to log out/in for group membership.
 
-### 3b. Docker conversion gate (REQUIRED before building)
+### 3b. Verify Docker is configured in source
 
-**If the chosen runtime is Docker**, you MUST check whether the source code has already been converted from Apple Container to Docker. Do NOT skip this step. Run:
+Verify the source code uses Docker (not Apple Container):
 
 ```bash
-grep -q 'container system status' src/index.ts && echo "NEEDS_CONVERSION" || echo "ALREADY_CONVERTED"
+grep -q 'docker info' src/index.ts && grep -q "spawn('docker'" src/container-runner.ts && grep -q 'docker build' container/build.sh && echo "DOCKER_OK" || echo "NEEDS_CONVERSION"
 ```
 
-Check these three files for Apple Container references:
-- `src/index.ts` — look for `container system status` or `ensureContainerSystemRunning`
-- `src/container-runner.ts` — look for `spawn('container'`
-- `container/build.sh` — look for `container build`
-
-**If ANY of those Apple Container references exist**, the source code has NOT been converted. You MUST run the `/convert-to-docker` skill NOW, before proceeding to the build step. Do not attempt to build the container image until the conversion is complete.
-
-**If none of those references exist** (i.e. the code already uses `docker info`, `spawn('docker'`, `docker build`), the conversion has already been done. Continue to 3c.
+If `NEEDS_CONVERSION`, run the `/convert-to-docker` skill before proceeding.
 
 ### 3c. Build and test
 
 Run `./.claude/skills/setup/scripts/03-setup-container.sh --runtime <chosen>` and parse the status block.
 
 **If BUILD_OK=false:** Read `logs/setup.log` tail for the build error.
-- If it's a cache issue (stale layers): run `container builder stop && container builder rm && container builder start` (Apple Container) or `docker builder prune -f` (Docker), then retry.
+- If it's a cache issue (stale layers): run `docker builder prune -f`, then retry.
 - If Dockerfile syntax or missing files: diagnose from the log and fix.
 - Retry the build script after fixing.
 
@@ -207,7 +197,7 @@ Show the log tail command: `tail -f logs/nanoclaw.log`
 
 **Service not starting:** Check `logs/nanoclaw.error.log`. Common causes: wrong Node path in plist (re-run step 10), missing `.env` (re-run step 4), missing WhatsApp auth (re-run step 5).
 
-**Container agent fails ("Claude Code process exited with code 1"):** Ensure the container runtime is running — start it: `container system start` (Apple Container) or `open -a Docker` (macOS Docker). Check container logs in `groups/main/logs/container-*.log`.
+**Container agent fails ("Claude Code process exited with code 1"):** Ensure Docker is running — start it: `open -a Docker` (macOS) or `sudo systemctl start docker` (Linux). Check container logs in `groups/main/logs/container-*.log`.
 
 **No response to messages:** Verify the trigger pattern matches. Main channel and personal/solo chats don't need a prefix. Check the registered JID in the database: `sqlite3 store/messages.db "SELECT * FROM registered_groups"`. Check `logs/nanoclaw.log`.
 
