@@ -401,7 +401,7 @@ function recoverPendingMessages(): void {
   }
 }
 
-export function ensureContainerSystemRunning(): void {
+function ensureContainerSystemRunning(): void {
   try {
     execSync('container system status', { stdio: 'pipe' });
     logger.debug('Apple Container system already running');
